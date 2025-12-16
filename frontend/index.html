@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Debate Arena</title>
+  <style>
+    :root {
+      --bg: #0e1116;
+      --card: #161b22;
+      --accent: #2ea043;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 16px;
+    }
+    h1, h2 { margin: 0 0 8px; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    }
+    label { display: block; font-weight: 600; margin-bottom: 4px; }
+    input, select, textarea, button {
+      width: 100%;
+      font: inherit;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0b0f14;
+      color: var(--text);
+      padding: 8px;
+    }
+    textarea { min-height: 160px; resize: vertical; }
+    button { cursor: pointer; border: 1px solid #58a6ff55; background: #58a6ff; color: #0b0f14; font-weight: 700; }
+    button:hover { filter: brightness(1.05); }
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
+    #output {
+      background: #0b0f14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      max-height: 480px;
+      overflow: auto;
+    }
+    .muted { color: var(--muted); font-size: 12px; }
+    .chat { display: flex; flex-direction: column; gap: 12px; max-width: 1100px; margin: 0 auto; }
+    .round-header { font-weight: 700; margin-top: 6px; color: var(--accent); }
+    .msg { display: flex; gap: 10px; align-items: flex-start; }
+    .avatar { width: 36px; height: 36px; border-radius: 50%; background: #222; display: grid; place-items: center; font-weight: 800; border: 1px solid var(--border); }
+    .bubble { background: #0b0f14; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; flex: 1; overflow-wrap: anywhere; }
+    .name { font-weight: 800; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 999px; border: 1px solid var(--border); background: #111820; font-size: 11px; }
+    .vote-summary { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-top: 6px; }
+    .final-banner { margin-top: 12px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); background: #111820; font-size: 18px; font-weight: 800; display: flex; align-items: center; gap: 10px; }
+  </style>
+</head>
+<body>
+  <div class="grid">
+    <div class="card" style="grid-column: 1 / -1">
+      <h2>Debate Setup</h2>
+      <label for="topic">Topic</label>
+      <input id="topic" placeholder="e.g., Is local AI the future?" />
+      <div class="row">
+        <div style="flex:1">
+          <label for="rounds">Rounds</label>
+          <input id="rounds" type="number" min="1" value="2" />
+        </div>
+        <div style="flex:1">
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="auto">auto</option>
+            <option value="step">step</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex; justify-content:center; margin-top:10px">
+        <button style="width:auto; padding:8px 14px" onclick="startFromForm()">Start Debate</button>
+      </div>
+      <div id="stepControls" style="display:none; margin-top:10px">
+        <label for="debateId" style="margin-top:10px; display:block">Debate ID (for step mode)</label>
+        <input id="debateId" placeholder="debate id" />
+        <button style="margin-top:8px" onclick="getDebate()">Refresh Debate</button>
+        <button style="margin-top:8px" onclick="advanceDebate()">Advance (step mode)</button>
+      </div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1">
+      <h2>Participants</h2>
+      <div id="participants"></div>
+      <div style="display:flex; justify-content:center; margin-top:10px">
+        <button style="width:auto; padding:8px 14px" onclick="addParticipant()">Add Participant</button>
+      </div>
+      <div class="muted" style="margin-top:6px">Use an odd count (3/5/7). Model IDs must match OVMS /v1/config.</div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1">
+      <h2>Debate Arena</h2>
+      <div id="output">Waiting...</div>
+    </div>
+  </div>
+
+  <script>
+    const outputEl = document.getElementById('output');
+    let participantMeta = {};
+    let advanceLoop = null;
+    let pollLoop = null;
+
+    function log(obj) {
+      const candidate = obj?.rounds ? obj : obj?.debate ? obj.debate : null;
+      if (candidate && Array.isArray(candidate.rounds)) {
+        renderDebate(candidate);
+        return;
+      }
+      const text = typeof obj === 'string' ? obj : JSON.stringify(obj, null, 2);
+      outputEl.textContent = text;
+    }
+
+    function baseUrl() {
+      return window.location.origin;
+    }
+
+    const phases = [
+      { id: "reaction", role: "reaction", prompt_template: "React to the topic.", visible_to: "all_participants" },
+      { id: "for", role: "argument_for", prompt_template: "Argue YES.", visible_to: "all_participants" },
+      { id: "against", role: "argument_against", prompt_template: "Argue NO.", visible_to: "all_participants" },
+      { id: "vote", role: "vote", prompt_template: "Vote YES or NO.", visible_to: "all_participants" }
+    ];
+
+    function rememberParticipants(list) {
+      const palette = ['#58a6ff', '#2ea043', '#d29922', '#f85149', '#a371f7', '#79c0ff', '#ffa657'];
+      participantMeta = {};
+      list.forEach((p, idx) => {
+        participantMeta[p.id] = {
+          name: p.display_name || p.id,
+          color: palette[idx % palette.length],
+        };
+      });
+    }
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    function phaseIcon(phaseId) {
+      if (phaseId === "reaction") return "💬";
+      if (phaseId === "for") return "✅";
+      if (phaseId === "against") return "❌";
+      if (phaseId === "vote") return "🗳️";
+      return "💡";
+    }
+
+    function voteEmoji(v) {
+      if (!v) return "⚪";
+      if (v === "YES") return "✅";
+      if (v === "NO") return "❌";
+      if (v === "TIE") return "🤝";
+      return "⚪";
+    }
+
+    function renderDebate(run) {
+      if (!run || !Array.isArray(run.rounds)) {
+        outputEl.textContent = "No debate data.";
+        return;
+      }
+
+      let html = '<div class="chat">';
+
+      html += `<div class="meta">Topic: ${escapeHtml(run.topic || '')}</div>`;
+
+      // Per-round messages
+      run.rounds.forEach((rnd, idx) => {
+        html += `<div class="round-header">Round ${rnd.round_index || idx + 1}</div>`;
+        (rnd.phase_outputs || []).forEach(po => {
+          const meta = participantMeta[po.participant_id] || { name: po.participant_id, color: '#58a6ff' };
+          const name = meta.name;
+          const icon = phaseIcon(po.phase_id);
+          const safeContent = escapeHtml(po.output || '').replace(/\n/g, '<br>');
+          html += `
+            <div class="msg">
+              <div class="avatar" style="color:${meta.color}">${name[0] || '?'}</div>
+              <div class="bubble">
+                <div class="name" style="color:${meta.color}">${escapeHtml(name)}</div>
+                <div class="meta tag">${icon} ${escapeHtml(po.phase_id)}</div>
+                <div>${safeContent}</div>
+              </div>
+            </div>`;
+        });
+
+        if (rnd.votes && rnd.votes.length) {
+          const yes = rnd.votes.filter(v => v.parsed_vote === "YES").length;
+          const no = rnd.votes.filter(v => v.parsed_vote === "NO").length;
+          const outcome = rnd.outcome || "INVALID";
+          html += `<div class="vote-summary">🗳️ Votes: ✅ ${yes} · ❌ ${no} · Outcome ${voteEmoji(outcome)} ${outcome}</div>`;
+        }
+      });
+
+      // Final outcome banner
+      const lastRound = run.rounds[run.rounds.length - 1];
+      const finalOutcome = lastRound?.outcome || (run.status ? run.status.toUpperCase() : "PENDING");
+      html += `<div class="final-banner">Final Result: ${voteEmoji(finalOutcome)} ${finalOutcome}</div>`;
+
+      html += '</div>';
+      outputEl.innerHTML = html;
+    }
+
+    function participantRow(idx, data) {
+      return `
+        <div class="row" style="margin-bottom:6px" data-idx="${idx}">
+          <input placeholder="Display name" value="${data.display_name || ''}" data-field="display_name" />
+          <input placeholder="Model ID" value="${data.model_id || ''}" data-field="model_id" />
+          <input placeholder="Persona prompt" value="${data.persona_prompt || ''}" data-field="persona_prompt" />
+          <button style="max-width:72px" onclick="removeParticipant(${idx})">Remove</button>
+        </div>`;
+    }
+
+    let participantState = [];
+
+    function renderParticipants() {
+      const container = document.getElementById('participants');
+      container.innerHTML = participantState.map((p, i) => participantRow(i, p)).join('');
+    }
+
+    function addParticipant(prefill) {
+      const count = participantState.length + 1;
+      participantState.push({
+        id: `p${count}`,
+        display_name: prefill?.display_name || `Debater ${count}`,
+        model_id: prefill?.model_id || "OpenVINO/Phi-3.5-mini-instruct-int4-ov",
+        persona_prompt: prefill?.persona_prompt || "You are concise and opinionated.",
+      });
+      renderParticipants();
+    }
+
+    function removeParticipant(idx) {
+      participantState = participantState.filter((_, i) => i !== idx);
+      renderParticipants();
+    }
+
+    function syncParticipantInputs() {
+      const container = document.getElementById('participants');
+      const rows = Array.from(container.querySelectorAll('[data-idx]'));
+      rows.forEach(row => {
+        const idx = Number(row.getAttribute('data-idx'));
+        const fields = row.querySelectorAll('[data-field]');
+        fields.forEach(f => {
+          const key = f.getAttribute('data-field');
+          participantState[idx][key] = f.value;
+        });
+        participantState[idx].id = `p${idx + 1}`;
+      });
+    }
+
+    // Seed 3 participants by default
+    addParticipant({ display_name: "Debater 1", persona_prompt: "You are pro-innovation." });
+    addParticipant({ display_name: "Debater 2", persona_prompt: "You are cautious." });
+    addParticipant({ display_name: "Debater 3", persona_prompt: "You are contrarian." });
+    rememberParticipants(participantState);
+
+    async function startFromForm() {
+      try {
+        syncParticipantInputs();
+        const topic = document.getElementById('topic').value.trim();
+        const rounds = Number(document.getElementById('rounds').value || 1);
+        const mode = document.getElementById('mode').value;
+
+        stopAdvanceLoop();
+        stopPollLoop();
+
+        if (!topic) throw new Error('Set a topic');
+        if (participantState.length % 2 === 0) throw new Error('Participants must be odd (3/5/7)');
+
+        const template = {
+          name: `UI Template ${new Date().toISOString()}`,
+          topic,
+          rounds,
+          phases,
+          participants: participantState.map((p, i) => ({
+            id: `p${i + 1}`,
+            display_name: p.display_name,
+            model_id: p.model_id,
+            persona_prompt: p.persona_prompt,
+          })),
+          voting: { mode: "simple_majority", allow_abstain: false },
+          resource_policy: { max_llm_ram_pct: 60, reserve_ram_gb: 12, max_parallel_requests: 3 },
+        };
+
+        rememberParticipants(template.participants);
+
+        // Create template
+        let resp = await fetch(`${baseUrl()}/templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(template),
+        });
+        let data = await resp.json();
+        if (!resp.ok) throw new Error(JSON.stringify(data));
+        const templateId = data.id;
+
+        // Start debate
+        const payload = {
+          template_id: templateId,
+          topic,
+          rounds,
+          mode,
+        };
+        resp = await fetch(`${baseUrl()}/debates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        data = await resp.json();
+        if (!resp.ok) throw new Error(JSON.stringify(data));
+        if (data.id) document.getElementById('debateId').value = data.id;
+        log(data);
+
+        if (payload.mode === 'step' && data.id) {
+          startAdvanceLoop(data.id);
+        } else if (payload.mode === 'auto' && data.id) {
+          startPollLoop(data.id);
+        }
+      } catch (err) {
+        log(err.message || err);
+      }
+    }
+
+    function startAdvanceLoop(id) {
+      stopAdvanceLoop();
+      advanceLoop = (async () => {
+        let done = false;
+        while (!done) {
+          try {
+            const resp = await fetch(`${baseUrl()}/debates/${id}/advance`, { method: 'POST' });
+            const data = await resp.json();
+            const debate = data.debate || data;
+            rememberParticipants(debate.template?.participants || participantState);
+            log(debate);
+            done = data.done || ['completed', 'failed', 'canceled'].includes((debate.status || '').toLowerCase());
+          } catch (err) {
+            log(err.message || err);
+            done = true;
+          }
+          if (!done) {
+            await new Promise(r => setTimeout(r, 600));
+          }
+        }
+      })();
+    }
+
+    function stopAdvanceLoop() {
+      advanceLoop = null;
+    }
+
+    function startPollLoop(id) {
+      stopPollLoop();
+      pollLoop = setInterval(async () => {
+        try {
+          const resp = await fetch(`${baseUrl()}/debates/${id}`);
+          const data = await resp.json();
+          rememberParticipants(data.template?.participants || participantState);
+          log(data);
+          const status = (data.status || '').toLowerCase();
+          if (['completed', 'failed', 'canceled'].includes(status)) {
+            stopPollLoop();
+          }
+        } catch (err) {
+          log(err.message || err);
+          stopPollLoop();
+        }
+      }, 700);
+    }
+
+    function stopPollLoop() {
+      if (pollLoop) {
+        clearInterval(pollLoop);
+        pollLoop = null;
+      }
+    }
+
+    async function getDebate() {
+      try {
+        const id = document.getElementById('debateId').value.trim();
+        if (!id) throw new Error('Set debate id');
+        const resp = await fetch(`${baseUrl()}/debates/${id}`);
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(JSON.stringify(data));
+        rememberParticipants(data.template?.participants || participantState);
+        log(data);
+      } catch (err) {
+        log(err.message || err);
+      }
+    }
+
+    async function advanceDebate() {
+      try {
+        const id = document.getElementById('debateId').value.trim();
+        if (!id) throw new Error('Set debate id');
+        const resp = await fetch(`${baseUrl()}/debates/${id}/advance`, { method: 'POST' });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(JSON.stringify(data));
+        log(data);
+      } catch (err) {
+        log(err.message || err);
+      }
+    }
+
+  </script>
+</body>
+</html>

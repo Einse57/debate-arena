@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.venv/
+.env
+.env.*
+!.env.example
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build / dist
+build/
+dist/
+
+# Logs
+*.log
+
+# Frontend
+node_modules/
+
+# Local data / runs
+*.sqlite3
+*.db
+
+# Coverage / test
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Misc
+*.swp
+*.swo
+
+# Local notes (exclude Engineering Handoff)
+Engineering Handoff.txt
