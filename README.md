@@ -2,7 +2,7 @@
 
 Minimal local debate orchestrator that fronts OVMS (OpenVINO Model Server) via its OpenAI-compatible `/v3/chat/completions` endpoint and serves a lightweight UI.
 
-![Debate Arena UI](debate_arena_UI.png)
+![Debate Arena UI](images/debate_arena_UI.png)
 
 ## Architecture
 ```
