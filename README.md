@@ -142,6 +142,8 @@ uvicorn app:app --port 8001 --reload
 
 Open the UI at: http://127.0.0.1:8001/ui/
 
+![Debate Arena Hotdog Example](images/debate_arena_hotdog.png)
+
 ## Usage
 - Fill in topic, rounds, mode (auto or step), and participants (odd count).
 - **Model names must match OVMS configuration:**
