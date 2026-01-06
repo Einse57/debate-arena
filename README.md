@@ -18,36 +18,84 @@ Minimal local debate orchestrator that fronts OVMS (OpenVINO Model Server) via i
 
 ## Prerequisites
 - Python 3.12 (or compatible)
-- OVMS running locally with an OpenAI-style chat endpoint at `http://127.0.0.1:8000/v3/chat/completions` or similar.
-- A model or multiple models available to OVMS (e.g., `OpenVINO/Phi-3.5-mini-instruct-int4-ov`).
+- OVMS running locally with an OpenAI-style chat endpoint at `http://127.0.0.1:8000/v3/chat/completions`
+- LLM models in OpenVINO format (e.g., from [HuggingFace OpenVINO org](https://huggingface.co/OpenVINO))
 
-### Example OVMS runs
+### OVMS Setup & Configuration
 
-#### Bare metal
+OVMS supports two deployment approaches for LLM models:
+
+#### Option 1: Multi-Model Config (Recommended for multiple models)
+
+Create a `models.json` file in your OVMS models directory:
+
+```json
+{
+  "model_config_list": [
+    {
+      "config": {
+        "name": "phi35-mini",
+        "base_path": "./OpenVINO/Phi-3.5-mini-instruct-int4-ov",
+        "target_device": "GPU",
+        "nireq": 2,
+        "allow_cache": true,
+        "plugin_config": {
+          "PERFORMANCE_HINT": "LATENCY",
+          "INFERENCE_PRECISION_HINT": "f16"
+        }
+      }
+    },
+    {
+      "config": {
+        "name": "qwen2.5-7b",
+        "base_path": "./OpenVINO/Qwen2.5-7B-Instruct-int4-ov",
+        "target_device": "GPU",
+        "nireq": 2,
+        "allow_cache": true,
+        "plugin_config": {
+          "PERFORMANCE_HINT": "LATENCY",
+          "INFERENCE_PRECISION_HINT": "f16"
+        }
+      }
+    }
+  ]
+}
+```
+
+Start OVMS:
 ```powershell
-# Set HF token if pulling models from Hugging Face
-$Env:HF_TOKEN = "hf_your_token"
-
-# Launch OVMS with the provided multi-model config
-ovms --config_path models/config.json --rest_port 8000 --rest_bind_address 0.0.0.0 --cache_size 2
+cd C:\path\to\ovms
+.\ovms.exe --config_path models\models.json --rest_port 8000 --rest_bind_address 127.0.0.1 --log_level ERROR
 ```
 
-Alternatively, single model without config:
+**In the UI, use the model `name` from config** (e.g., `phi35-mini`, `qwen2.5-7b`).
+
+#### Option 2: Single Model Deployment
+
 ```powershell
-ovms --model_name phi35-mini --model_path models/OpenVINO/Phi-3.5-mini-instruct-int4-ov --rest_port 8000 --target_device GPU --task text_generation --cache_size 2
+.\ovms.exe --model_path C:\path\to\models\OpenVINO\Phi-3.5-mini-instruct-int4-ov --rest_port 8000 --rest_bind_address 127.0.0.1 --target_device GPU --cache_size 2
 ```
 
-#### Docker
-```bash
-# From a folder containing your model (mounted at /models inside the container)
-docker run --rm \
-  -p 8000:8000 \
-  -v %cd%/models:/models \
-  openvino/model_server:latest \
-  --config_path /models/config.json \
-  --rest_port 8000 \
-  --rest_bind_address 0.0.0.0
-```
+**In the UI, use the full path** (e.g., `OpenVINO/Phi-3.5-mini-instruct-int4-ov`).
+
+### Important Gotchas
+
+⚠️ **Model Naming**
+- **Config-based deployment**: Use the `name` field from your config (e.g., `phi35-mini`)
+- **Single model deployment**: Use the full model path (e.g., `OpenVINO/Phi-3.5-mini-instruct-int4-ov`)
+- **Wrong model name = 404 error**: "Mediapipe graph definition with requested name is not found"
+
+⚠️ **OVMS Endpoint**
+- OVMS LLM endpoint is `/v3/chat/completions` (not `/v1/`)
+- Default: `http://127.0.0.1:8000/v3/chat/completions`
+
+⚠️ **Environment Variables**
+- `OVMS_BASE_URL` and `MAX_TOKENS` are read at **backend startup**
+- Changes require restarting `start.ps1` (not picked up during runtime)
+
+⚠️ **Version Directory Warnings**
+- Warnings like "No version found for model" are **harmless** for LLM models
+- Use `--log_level ERROR` to suppress them
 
 #### Health check
 ```bash
@@ -95,8 +143,8 @@ uvicorn app:app --port 8001 --reload
 Open the UI at: http://127.0.0.1:8001/ui/
 
 ## Usage
-- Fill in topic, rounds, mode (auto or step), and participants (odd count; model IDs must match OVMS models).
-- Start Debate.
+- Fill in topic, rounds, mode (auto or step), and participants (odd count).
+- **Model names must match OVMS configuration:**
   - Auto mode: UI polls and renders as phases complete.
   - Step mode: UI auto-advances phases to stream updates as they finish.
 - Debate Arena panel shows chat-style outputs per participant/phase and final outcome.
@@ -105,4 +153,4 @@ Open the UI at: http://127.0.0.1:8001/ui/
 - Storage is in-memory; restarting the app clears templates/runs.
 - Final records are still recorded server-side for API access, but the UI focuses on live debate output.
 - Frontend automatically detects API base URL (works with any host/port).
-- See `models/config.json` for multi-model OVMS setup with phi35-mini, qwen2.5-7b, and qwen2.5-0.5b.
+- Environment variables (`OVMS_BASE_URL`, `MAX_TOKENS`) are loaded at backend startup - restart required for changes.

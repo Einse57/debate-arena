@@ -32,7 +32,15 @@ class AssistantBuilderClient:
 
         url = f"{self.base_url}/v3/chat/completions"
         resp = await self._client.post(url, json=payload)
-        resp.raise_for_status()
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            error_detail = ""
+            try:
+                error_detail = f" - {resp.text}"
+            except:
+                pass
+            raise RuntimeError(f"OVMS request failed: {exc.response.status_code}{error_detail}") from exc
         data = resp.json()
         try:
             return data["choices"][0]["message"]["content"]

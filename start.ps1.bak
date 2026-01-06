@@ -1,4 +1,4 @@
-﻿param(
+param(
     [string]$HostAddress = "127.0.0.1",
     [string]$Port = "8001",
     [string]$OvmsPort = "8000",
@@ -27,17 +27,16 @@ Write-Host "Checking OVMS at $OvmsBaseUrl..." -ForegroundColor Cyan
 $ovmsRunning = Test-NetConnection -ComputerName 127.0.0.1 -Port $OvmsPort -InformationLevel Quiet -WarningAction SilentlyContinue
 
 if ($ovmsRunning) {
-    Write-Host "OVMS is running on port $OvmsPort" -ForegroundColor Green
+    Write-Host "✓ OVMS is running on port $OvmsPort" -ForegroundColor Green
 } else {
     Write-Warning "OVMS is not running on port $OvmsPort"
     Write-Host ""
     Write-Host "To start OVMS, open a separate terminal and run:" -ForegroundColor Yellow
-    Write-Host "  With config file (recommended):" -ForegroundColor Cyan
-    Write-Host '    cd C:\path\to\ovms' -ForegroundColor White
-    Write-Host '    .\ovms.exe --config_path models\models.json --rest_port 8000 --rest_bind_address 127.0.0.1 --log_level ERROR' -ForegroundColor White
+    Write-Host "  With config.json:" -ForegroundColor Cyan
+    Write-Host '    ovms --config_path <path-to-config.json> --rest_port 8000 --rest_bind_address 127.0.0.1' -ForegroundColor White
     Write-Host ""
-    Write-Host "  Or with a single model (use absolute paths):" -ForegroundColor Cyan
-    Write-Host '    .\ovms.exe --model_path <absolute-path-to-model> --model_name <name> --rest_port 8000 --rest_bind_address 127.0.0.1 --log_level ERROR' -ForegroundColor White
+    Write-Host "  Or with a single model:" -ForegroundColor Cyan
+    Write-Host '    ovms --model_path <path> --model_name <name> --rest_port 8000 --target_device CPU --task text_generation' -ForegroundColor White
     Write-Host ""
     
     $response = Read-Host "Continue without OVMS? (y/n)"
