@@ -16,12 +16,12 @@ Minimal local debate orchestrator that fronts OVMS (OpenVINO Model Server) via i
 
 ## Prerequisites
 - Python 3.12 (or compatible)
-- OVMS running locally with an OpenAI-style chat endpoint at `http://127.0.0.1:8000/v3/chat/completions`.
-- A model available to OVMS (e.g., `OpenVINO/Phi-3.5-mini-instruct-int4-ov`).
+- OVMS running locally with an OpenAI-style chat endpoint at `http://127.0.0.1:8000/v3/chat/completions` or similar.
+- A model or multiple models available to OVMS (e.g., `OpenVINO/Phi-3.5-mini-instruct-int4-ov`).
 
-### Example OVMS run
+### Example OVMS runs
 
-#### Bare metal (recommended for local development)
+#### Bare metal
 ```powershell
 # Set HF token if pulling models from Hugging Face
 $Env:HF_TOKEN = "hf_your_token"
